@@ -29,7 +29,10 @@ def get_users(
     return users
 
 
-@app.get("/users/{user_id}")
+@app.get(
+    "/users/{user_id}",
+    response_model=UserResponse,
+)
 def get_user(
     user_id: int,
     db: Session = Depends(get_db),
