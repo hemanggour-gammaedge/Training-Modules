@@ -1,3 +1,4 @@
+import json
 from fastapi import FastAPI, HTTPException, Depends
 from sqlalchemy import text, select
 from sqlalchemy.orm import Session
@@ -5,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.models import User
 from app.schemas import UserCreate, UserResponse, UserUpdate
 from app.dependencies import get_db
+from app.redis_client import cache_client
 
 
 app = FastAPI(
@@ -27,6 +29,41 @@ def get_users(
     return users
 
 
+@app.get("/users/{user_id}")
+def get_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+):
+    cache_key = f"user:{user_id}"
+
+    cached_user = cache_client.get(cache_key)
+
+    if cached_user:
+        return json.loads(cached_user)
+
+    user = db.get(User, user_id)
+
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found",
+        )
+
+    result = {
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+    }
+
+    cache_client.setex(
+        cache_key,
+        60,
+        json.dumps(result),
+    )
+
+    return result
+
+
 @app.post(
     "/users",
     response_model=UserResponse,
@@ -44,28 +81,6 @@ def create_user(
     db.add(user)
     db.commit()
     db.refresh(user)
-
-    return user
-
-
-@app.get(
-    "/users/{user_id}",
-    response_model=UserResponse,
-)
-def get_user(
-    user_id: int,
-    db: Session = Depends(get_db),
-):
-    user = db.get(
-        User,
-        user_id,
-    )
-
-    if not user:
-        raise HTTPException(
-            status_code=404,
-            detail="User not found",
-        )
 
     return user
 
